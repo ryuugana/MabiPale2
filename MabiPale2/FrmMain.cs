@@ -1,7 +1,4 @@
-﻿using MabiPale2.Plugins;
-using MabiPale2.Properties;
-using MabiPale2.Shared;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -10,11 +7,17 @@ using System.Drawing;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
+using Aura.Mabi.Const;
+using MabiPale2.Plugins;
+using MabiPale2.Properties;
+using MabiPale2.Shared;
 
 namespace MabiPale2
 {
@@ -34,7 +37,11 @@ namespace MabiPale2
 
 		private SearchParametres searchParams = new SearchParametres();
 
-		public FrmMain()
+		private Socket packetSocket;
+        private byte[] messageReceived = new byte[1024];
+
+
+        public FrmMain()
 		{
 			InitializeComponent();
 
@@ -509,11 +516,11 @@ namespace MabiPale2
 		/// </summary>
 		private void BtnConnect_Click(object sender, EventArgs e)
 		{
-			if (alissaHWnd == IntPtr.Zero)
+			/*if (alissaHWnd == IntPtr.Zero)
 			{
 				if (!SelectPacketProvider(true))
 					return;
-			}
+			}*/
 
 			Connect();
 		}
@@ -536,30 +543,113 @@ namespace MabiPale2
 		/// </summary>
 		private void Connect()
 		{
-			if (!WinApi.IsWindow(alissaHWnd))
-			{
-				//MessageBox.Show("Failed to connect, please make sure the selected packet provider is still running.", Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
-				alissaHWnd = IntPtr.Zero;
-				BtnConnect_Click(null, null);
-				return;
-			}
+            try
+            {
+				// Connect using IP address instead of WinAPI
+				// TODO: Make IP configurable
+                IPAddress ipAddr = IPAddress.Parse("127.0.0.1");
+                IPEndPoint localEndPoint = new IPEndPoint(ipAddr, 23011);
 
-			SendAlissa(alissaHWnd, Sign.Connect);
+                packetSocket = new Socket(ipAddr.AddressFamily,
+                           SocketType.Stream, ProtocolType.Tcp);
 
-			BtnConnect.Enabled = false;
-			BtnConnectTo.Enabled = false;
-			BtnDisconnect.Enabled = true;
+                try
+                {
+                    packetSocket.Connect(localEndPoint);
 
-			queueTimer.Enabled = true;
+					// Send hello message
+                    byte[] messageSent = Encoding.UTF8.GetBytes("hello server");
+                    int byteSent = packetSocket.Send(messageSent);
+
+					int byteRecv = 0;
+
+					// Receive hello message
+                    byteSent = packetSocket.Send(messageSent);
+                    byteRecv = packetSocket.Receive(messageReceived);
+                    Console.WriteLine("Message from Server -> {0}",
+                            Encoding.UTF8.GetString(messageReceived,
+                                                        0, byteRecv));
+					MessageRecv_Next();
+
+                    BtnConnect.Enabled = false;
+                    BtnConnectTo.Enabled = false;
+                    BtnDisconnect.Enabled = true;
+
+                    queueTimer.Enabled = true;
+                }
+
+                // Manage of Socket's Exceptions
+                catch (ArgumentNullException ane)
+                {
+                    MessageBox.Show(ane.ToString(), Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    Console.WriteLine("ArgumentNullException : {0}", ane.ToString());
+                }
+
+                catch (SocketException se)
+                {
+
+                    MessageBox.Show(se.ToString(), Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    Console.WriteLine("SocketException : {0}", se.ToString());
+                }
+
+                catch (Exception e)
+                {
+                    MessageBox.Show(e.ToString(), Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    Console.WriteLine("Unexpected exception : {0}", e.ToString());
+                }
+            }
+
+            catch (Exception e)
+            {
+                MessageBox.Show(e.ToString(), Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Console.WriteLine(e.ToString());
+            }
 		}
 
-		/// <summary>
-		/// Tries to find a valid packet provider, asks the user to select one
-		/// if there are multiple windows.
-		/// </summary>
-		/// <param name="selectSingle">If true a single valid candidate will be selected without prompt.</param>
-		/// <returns></returns>
-		private bool SelectPacketProvider(bool selectSingle)
+		private void MessageRecv_Next()
+		{
+			// TODO: Possibly add try catch anywhere socket is used to handle connection instability (unexpected disconnect)
+			if(packetSocket.Connected)
+            {
+                SocketAsyncEventArgs e = new SocketAsyncEventArgs();
+                e.SetBuffer(messageReceived, 0, 1023);
+                e.Completed += MessageRecv_Completed;
+                packetSocket.ReceiveAsync(e);
+            }
+        }
+
+        private void MessageRecv_Completed(object sender, SocketAsyncEventArgs e)
+        {
+            bool recv = messageReceived[0] == 1;
+			int messageLength = messageReceived.Length;
+
+
+            // TODO: Short-term solution; change how this works later; extremely buggy by design
+            for (int i = 0; i < messageReceived.Length; i++)
+			{
+				if (messageReceived[i] == 0x3)
+				{
+					messageLength = i;
+                }
+			}
+
+			byte[] data = messageReceived.Skip(1).Take(messageLength -1).ToArray();
+
+            var packet = new Packet(data, 0);
+            var palePacket = new PalePacket(packet, DateTime.Now, recv);
+
+            packetQueue.Enqueue(palePacket);
+
+			MessageRecv_Next();
+        }
+
+        /// <summary>
+        /// Tries to find a valid packet provider, asks the user to select one
+        /// if there are multiple windows.
+        /// </summary>
+        /// <param name="selectSingle">If true a single valid candidate will be selected without prompt.</param>
+        /// <returns></returns>
+        private bool SelectPacketProvider(bool selectSingle)
 		{
 			var potentialWindows = new List<FoundWindow>();
 			potentialWindows.AddRange(WinApi.FindAllWindows("mod_Alissa"));
@@ -613,10 +703,12 @@ namespace MabiPale2
 		/// </summary>
 		private void Disconnect()
 		{
-			if (alissaHWnd != IntPtr.Zero)
-				SendAlissa(alissaHWnd, Sign.Disconnect);
+            // Close Socket using 
+            // the method Close()
+            packetSocket.Shutdown(SocketShutdown.Both);
+            packetSocket.Close();
 
-			this.InvokeIfRequired((MethodInvoker)delegate
+            this.InvokeIfRequired((MethodInvoker)delegate
 			{
 				BtnConnect.Enabled = true;
 				BtnConnectTo.Enabled = true;
@@ -627,52 +719,24 @@ namespace MabiPale2
 		}
 
 		/// <summary>
-		/// Sends message to Alissa window.
+		/// Sends message to server.
 		/// </summary>
 		/// <param name="op"></param>
 		/// <param name="data"></param>
 		public void SendAlissa(int op, byte[] data = null)
 		{
-			if (alissaHWnd == IntPtr.Zero)
-				return;
-
-			SendAlissa(alissaHWnd, op, data);
-		}
-
-		/// <summary>
-		/// Sends message to Alissa window.
-		/// </summary>
-		/// <param name="hWnd"></param>
-		/// <param name="op"></param>
-		/// <param name="data"></param>
-		private void SendAlissa(IntPtr hWnd, int op, byte[] data = null)
-		{
 			var dataLength = 0;
-			var dataPtr = IntPtr.Zero;
 
 			if (data != null)
 			{
-				dataLength = data.Length;
-				dataPtr = Marshal.AllocHGlobal(dataLength);
-				Marshal.Copy(data, 0, dataPtr, dataLength);
+                dataLength = data.Length + sizeof(int) + sizeof(int);
+                byte[] sendBuffer = new byte[dataLength];
+				BitConverter.GetBytes(op).CopyTo(sendBuffer, 0);
+                BitConverter.GetBytes(data.Length).CopyTo(sendBuffer, 4);
+                data.CopyTo(sendBuffer, 8);
+
+                packetSocket.Send(sendBuffer, 0);
 			}
-
-			WinApi.COPYDATASTRUCT cds;
-			cds.dwData = (IntPtr)op;
-			cds.cbData = dataLength;
-			cds.lpData = dataPtr;
-
-			var cdsBuffer = Marshal.AllocHGlobal(Marshal.SizeOf(cds));
-			Marshal.StructureToPtr(cds, cdsBuffer, false);
-
-			this.InvokeIfRequired((MethodInvoker)delegate
-			{
-				WinApi.SendMessage(hWnd, WinApi.WM_COPYDATA, this.Handle, cdsBuffer);
-			});
-
-			if (dataPtr != IntPtr.Zero)
-				Marshal.FreeHGlobal(dataPtr);
-			Marshal.FreeHGlobal(cdsBuffer);
 		}
 
 		/// <summary>
@@ -723,9 +787,11 @@ namespace MabiPale2
 		/// </summary>
 		/// <param name="state"></param>
 		private void OnQueueTimer(object state, EventArgs args)
-		{
-			if (!WinApi.IsWindow(alissaHWnd))
-				Disconnect();
+        {
+            queueTimer.Enabled = true;
+
+            //if (!WinApi.IsWindow(alissaHWnd))
+			//	Disconnect();
 
 			var count = packetQueue.Count;
 			if (count == 0)
