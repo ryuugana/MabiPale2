@@ -685,10 +685,13 @@ namespace MabiPale2
 		/// </summary>
 		private void Disconnect()
 		{
-            // Close Socket using 
-            // the method Close()
-            packetSocket.Shutdown(SocketShutdown.Both);
-            packetSocket.Close();
+			if(packetSocket.Connected)
+            {
+                // Close Socket using 
+                // the method Close()
+                packetSocket.Shutdown(SocketShutdown.Both);
+                packetSocket.Close();
+            }
 
             this.InvokeIfRequired((MethodInvoker)delegate
 			{
