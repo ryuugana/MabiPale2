@@ -614,19 +614,9 @@ namespace MabiPale2
         private void MessageRecv_Completed(object sender, SocketAsyncEventArgs e)
         {
             bool recv = messageReceived[0] == 1;
-			int messageLength = messageReceived.Length;
+			int messageLength = BitConverter.ToInt32(messageReceived, 1);
 
-
-            // TODO: Short-term solution; change how this works later; extremely buggy by design
-            for (int i = 0; i < messageReceived.Length; i++)
-			{
-				if (messageReceived[i] == 0x3)
-				{
-					messageLength = i;
-                }
-			}
-
-			byte[] data = messageReceived.Skip(1).Take(messageLength -1).ToArray();
+			byte[] data = messageReceived.Skip(5).Take(messageLength).ToArray();
 
             var packet = new Packet(data, 0);
             var palePacket = new PalePacket(packet, DateTime.Now, recv);
