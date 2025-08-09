@@ -25,7 +25,6 @@ namespace MabiPale2
 	{
 		private PluginManager pluginManager;
 
-		private IntPtr alissaHWnd;
 
 		private Queue<PalePacket> packetQueue;
 		private System.Timers.Timer queueTimer;
@@ -516,12 +515,6 @@ namespace MabiPale2
 		/// </summary>
 		private void BtnConnect_Click(object sender, EventArgs e)
 		{
-			/*if (alissaHWnd == IntPtr.Zero)
-			{
-				if (!SelectPacketProvider(true))
-					return;
-			}*/
-
 			Connect();
 		}
 
@@ -684,7 +677,6 @@ namespace MabiPale2
 				window = FrmAlissaSelection.Selection;
 			}
 
-			alissaHWnd = window.HWnd;
 			LblPacketProvider.Text = window.ClassName;
 
 			return true;
@@ -789,9 +781,6 @@ namespace MabiPale2
 		private void OnQueueTimer(object state, EventArgs args)
         {
             queueTimer.Enabled = true;
-
-            //if (!WinApi.IsWindow(alissaHWnd))
-			//	Disconnect();
 
 			var count = packetQueue.Count;
 			if (count == 0)
