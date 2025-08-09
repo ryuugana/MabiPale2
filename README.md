@@ -3,7 +3,7 @@ MabiPale2
 
 MabiPale is a packet logger for the online-game Mabinogi.
 
-Unlike its first version, Pale now requires a packet provider that is compatible to mod_Alissa. Valid canditates would be [Morrighan](https://github.com/exectails/Morrighan) or mod_Alissa itself.
+Unlike the original MabiPale2, this fork uses TCP for communication.
 
 Plugins
 ------------------------------
