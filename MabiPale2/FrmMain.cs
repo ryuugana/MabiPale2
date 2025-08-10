@@ -601,7 +601,6 @@ namespace MabiPale2
 
 		private void MessageRecv_Next()
 		{
-			// TODO: Possibly add try catch anywhere socket is used to handle connection instability (unexpected disconnect)
 			if(packetSocket.Connected)
             {
                 SocketAsyncEventArgs e = new SocketAsyncEventArgs();
@@ -621,7 +620,14 @@ namespace MabiPale2
             var packet = new Packet(data, 0);
             var palePacket = new PalePacket(packet, DateTime.Now, recv);
 
-            packetQueue.Enqueue(palePacket);
+			try
+            {
+                packetQueue.Enqueue(palePacket);
+            }
+			catch(Exception ex)
+			{
+				Disconnect();
+			}
 
 			MessageRecv_Next();
         }
